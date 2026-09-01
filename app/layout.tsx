@@ -1,5 +1,7 @@
 import type {Metadata} from 'next';
 import './globals.css'; // Global styles
+import { AuthProvider } from '@/lib/AuthContext';
+import { AuthModal } from '@/components/AuthModal';
 
 export const metadata: Metadata = {
   title: '6. Sınıf İngilizce Kelime Dünyası',
@@ -20,8 +22,12 @@ export default function RootLayout({children}: {children: React.ReactNode}) {
   return (
     <html lang="tr">
       <body className="min-h-screen bg-orange-50/70 text-slate-900 antialiased selection:bg-orange-500 selection:text-white" suppressHydrationWarning>
-        {children}
+        <AuthProvider>
+          {children}
+          <AuthModal />
+        </AuthProvider>
       </body>
     </html>
   );
 }
+

@@ -11,6 +11,7 @@ import { ChatAssistant } from '@/components/ChatAssistant';
 import { soundManager } from '@/lib/soundEffects';
 import { motion, AnimatePresence } from 'motion/react';
 import { Sparkles, Trophy, BookOpen, GraduationCap, ArrowRight, RotateCcw } from 'lucide-react';
+import { useAuth } from '@/lib/AuthContext';
 
 const subscribeStorage = (callback: () => void) => {
   if (typeof window === 'undefined') return () => {};
@@ -29,6 +30,8 @@ const notifyStorageChange = () => {
 };
 
 export default function EnglishWordApp() {
+  const { user, syncProgress } = useAuth();
+
   // Unit & Word Selection State
   const [selectedUnit, setSelectedUnit] = useState<string>('all');
   const [activeWordIndex, setActiveWordIndex] = useState<number>(0);
@@ -50,6 +53,28 @@ export default function EnglishWordApp() {
     () => (typeof window !== 'undefined' ? localStorage.getItem('grade6_eng_total') || '0' : '0'),
     () => '0'
   );
+
+  // When user logs in, populate localStorage with database profile if empty
+  React.useEffect(() => {
+    if (user) {
+      if (user.masteredWordIds && user.masteredWordIds.length > 0) {
+        try {
+          const currentLocal = JSON.parse(localStorage.getItem('grade6_eng_mastered') || '[]');
+          const combined = Array.from(new Set([...currentLocal, ...user.masteredWordIds]));
+          localStorage.setItem('grade6_eng_mastered', JSON.stringify(combined));
+        } catch {
+          localStorage.setItem('grade6_eng_mastered', JSON.stringify(user.masteredWordIds));
+        }
+      }
+      if (user.totalStudied > 0) {
+        const localTotal = parseInt(localStorage.getItem('grade6_eng_total') || '0', 10) || 0;
+        if (user.totalStudied > localTotal) {
+          localStorage.setItem('grade6_eng_total', user.totalStudied.toString());
+        }
+      }
+      notifyStorageChange();
+    }
+  }, [user]);
 
   const masteredWordIds = useMemo<string[]>(() => {
     try {
@@ -129,20 +154,39 @@ export default function EnglishWordApp() {
   // Evaluate student answer for current word card
   const handleAnswerEvaluated = (isCorrect: boolean, studentAnswer: string) => {
     incrementTotalStudied();
+    let nextStreak = streak;
+    let nextMastered = masteredWordIds;
+    let nextReviewed = reviewedWordIds;
+
     if (isCorrect) {
       setCorrectAnswersCount((prev) => prev + 1);
-      setStreak((prev) => prev + 1);
+      nextStreak = streak + 1;
+      setStreak(nextStreak);
       if (!masteredWordIds.includes(currentWord.id)) {
+        nextMastered = [...masteredWordIds, currentWord.id];
         updateMasteredWords((prev) => (prev.includes(currentWord.id) ? prev : [...prev, currentWord.id]));
       }
     } else {
+      nextStreak = 0;
       setStreak(0);
       if (!reviewedWordIds.includes(currentWord.id)) {
+        nextReviewed = [...reviewedWordIds, currentWord.id];
         setReviewedWordIds((prev) => [...prev, currentWord.id]);
       }
     }
 
     setCycleEvaluations((prev) => [...prev, { isCorrect, answer: studentAnswer }]);
+
+    // Sync to PostgreSQL if user is logged in
+    if (user) {
+      syncProgress({
+        totalStudied: totalStudiedCount + 1,
+        streak: nextStreak,
+        correctAnswers: correctAnswersCount + (isCorrect ? 1 : 0),
+        masteredWordIds: nextMastered,
+        reviewedWordIds: nextReviewed,
+      });
+    }
   };
 
   // Move to next word or trigger Quiz on 5th word
@@ -161,7 +205,15 @@ export default function EnglishWordApp() {
 
   // Complete Quiz handler
   const handleCompleteQuiz = (score: number, totalQuestions: number) => {
-    setQuizzesCompletedCount((prev) => prev + 1);
+    const nextQuizzesCount = quizzesCompletedCount + 1;
+    setQuizzesCompletedCount(nextQuizzesCount);
+    
+    if (user) {
+      syncProgress({
+        quizzesCompleted: nextQuizzesCount,
+      });
+    }
+
     // Reset cycle for the next 5 words
     setCycleWords([]);
     setCycleEvaluations([]);
