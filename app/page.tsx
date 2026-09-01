@@ -1,15 +1,32 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useSyncExternalStore } from 'react';
 import { VOCABULARY_LIST, VocabularyWord, UNITS } from '@/lib/vocabularyData';
 import { ProgressHeader } from '@/components/ProgressHeader';
 import { WordCard } from '@/components/WordCard';
 import { QuizScreen } from '@/components/QuizScreen';
 import { WordListModal } from '@/components/WordListModal';
 import { SessionSummaryModal } from '@/components/SessionSummaryModal';
+import { ChatAssistant } from '@/components/ChatAssistant';
 import { soundManager } from '@/lib/soundEffects';
 import { motion, AnimatePresence } from 'motion/react';
 import { Sparkles, Trophy, BookOpen, GraduationCap, ArrowRight, RotateCcw } from 'lucide-react';
+
+const subscribeStorage = (callback: () => void) => {
+  if (typeof window === 'undefined') return () => {};
+  window.addEventListener('storage', callback);
+  window.addEventListener('grade6_storage_change', callback);
+  return () => {
+    window.removeEventListener('storage', callback);
+    window.removeEventListener('grade6_storage_change', callback);
+  };
+};
+
+const notifyStorageChange = () => {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('grade6_storage_change'));
+  }
+};
 
 export default function EnglishWordApp() {
   // Unit & Word Selection State
@@ -21,38 +38,44 @@ export default function EnglishWordApp() {
   const [cycleEvaluations, setCycleEvaluations] = useState<{ isCorrect: boolean; answer: string }[]>([]);
   const [isQuizMode, setIsQuizMode] = useState<boolean>(false);
 
-  // Overall Progression Metrics
-  const [totalStudiedCount, setTotalStudiedCount] = useState<number>(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const saved = localStorage.getItem('grade6_eng_total');
-        if (saved) return parseInt(saved, 10);
-      } catch {
-        // ignore
-      }
+  // SSR-safe external store for localStorage (guarantees zero hydration mismatch)
+  const masteredStorageRaw = useSyncExternalStore(
+    subscribeStorage,
+    () => (typeof window !== 'undefined' ? localStorage.getItem('grade6_eng_mastered') || '[]' : '[]'),
+    () => '[]'
+  );
+
+  const totalStudiedStorageRaw = useSyncExternalStore(
+    subscribeStorage,
+    () => (typeof window !== 'undefined' ? localStorage.getItem('grade6_eng_total') || '0' : '0'),
+    () => '0'
+  );
+
+  const masteredWordIds = useMemo<string[]>(() => {
+    try {
+      const parsed = JSON.parse(masteredStorageRaw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
     }
-    return 0;
-  });
+  }, [masteredStorageRaw]);
+
+  const totalStudiedCount = useMemo<number>(() => {
+    const val = parseInt(totalStudiedStorageRaw, 10);
+    return isNaN(val) ? 0 : val;
+  }, [totalStudiedStorageRaw]);
+
+  // Session-specific Progression Metrics
   const [quizzesCompletedCount, setQuizzesCompletedCount] = useState<number>(0);
   const [correctAnswersCount, setCorrectAnswersCount] = useState<number>(0);
   const [streak, setStreak] = useState<number>(0);
-  const [masteredWordIds, setMasteredWordIds] = useState<string[]>(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const saved = localStorage.getItem('grade6_eng_mastered');
-        if (saved) return JSON.parse(saved);
-      } catch {
-        // ignore
-      }
-    }
-    return [];
-  });
   const [reviewedWordIds, setReviewedWordIds] = useState<string[]>([]);
 
   // Sound and Modals
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
   const [isWordListOpen, setIsWordListOpen] = useState<boolean>(false);
   const [isSummaryOpen, setIsSummaryOpen] = useState<boolean>(false);
+  const [isChatOpen, setIsChatOpen] = useState<boolean>(false);
 
   // Filtered vocabulary based on unit
   const activeVocabulary = useMemo(() => {
@@ -60,15 +83,26 @@ export default function EnglishWordApp() {
     return VOCABULARY_LIST.filter((w) => w.unitId === selectedUnit);
   }, [selectedUnit]);
 
-  // Save progress changes
-  useEffect(() => {
+  const updateMasteredWords = useCallback((updater: (prev: string[]) => string[]) => {
     try {
-      localStorage.setItem('grade6_eng_mastered', JSON.stringify(masteredWordIds));
-      localStorage.setItem('grade6_eng_total', totalStudiedCount.toString());
+      const current = JSON.parse(localStorage.getItem('grade6_eng_mastered') || '[]');
+      const next = updater(Array.isArray(current) ? current : []);
+      localStorage.setItem('grade6_eng_mastered', JSON.stringify(next));
+      notifyStorageChange();
     } catch {
       // Ignore
     }
-  }, [masteredWordIds, totalStudiedCount]);
+  }, []);
+
+  const incrementTotalStudied = useCallback(() => {
+    try {
+      const current = parseInt(localStorage.getItem('grade6_eng_total') || '0', 10) || 0;
+      localStorage.setItem('grade6_eng_total', (current + 1).toString());
+      notifyStorageChange();
+    } catch {
+      // Ignore
+    }
+  }, []);
 
   // Handle word selection
   const currentWord = useMemo(() => {
@@ -94,12 +128,12 @@ export default function EnglishWordApp() {
 
   // Evaluate student answer for current word card
   const handleAnswerEvaluated = (isCorrect: boolean, studentAnswer: string) => {
-    setTotalStudiedCount((prev) => prev + 1);
+    incrementTotalStudied();
     if (isCorrect) {
       setCorrectAnswersCount((prev) => prev + 1);
       setStreak((prev) => prev + 1);
       if (!masteredWordIds.includes(currentWord.id)) {
-        setMasteredWordIds((prev) => [...prev, currentWord.id]);
+        updateMasteredWords((prev) => (prev.includes(currentWord.id) ? prev : [...prev, currentWord.id]));
       }
     } else {
       setStreak(0);
@@ -171,6 +205,7 @@ export default function EnglishWordApp() {
         onToggleSound={handleToggleSound}
         onOpenWordList={() => setIsWordListOpen(true)}
         onFinishSession={() => setIsSummaryOpen(true)}
+        onOpenChat={() => setIsChatOpen(true)}
         masteredCount={masteredWordIds.length}
       />
 
@@ -278,6 +313,14 @@ export default function EnglishWordApp() {
         quizzesCompleted={quizzesCompletedCount}
         correctAnswersCount={correctAnswersCount}
         streak={streak}
+      />
+
+      {/* AI English Tutor Chat Assistant */}
+      <ChatAssistant
+        isOpen={isChatOpen}
+        onClose={() => setIsChatOpen(false)}
+        onOpen={() => setIsChatOpen(true)}
+        currentWord={isQuizMode ? undefined : currentWord}
       />
     </div>
   );
