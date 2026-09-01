@@ -1,6 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 import { NextRequest, NextResponse } from "next/server";
 
+// Server-side route handler - process.env.GEMINI_API_KEY is never exposed to the client
 export async function POST(req: NextRequest) {
   try {
     const apiKey = process.env.GEMINI_API_KEY;
@@ -8,8 +9,8 @@ export async function POST(req: NextRequest) {
     if (!apiKey) {
       return NextResponse.json(
         {
-          error: "API anahtarı bulunamadı.",
-          text: "Merhaba! AI Öğretmen asistanını kullanabilmek için GEMINI_API_KEY yapılandırması gereklidir. Lütfen platform ayarlarından API anahtarınızı tanımlayın.",
+          error: "GEMINI_API_KEY bulunamadı.",
+          text: "Merhaba! AI Öğretmen asistanını kullanabilmek için sunucu tarafında GEMINI_API_KEY ortam değişkeninin tanımlanması gereklidir. Lütfen .env.local dosyanıza GEMINI_API_KEY=... ekleyin.",
         },
         { status: 200 }
       );
@@ -20,11 +21,6 @@ export async function POST(req: NextRequest) {
 
     const ai = new GoogleGenAI({
       apiKey,
-      httpOptions: {
-        headers: {
-          "User-Agent": "aistudio-build",
-        },
-      },
     });
 
     const systemInstruction = `Sen 6. sınıf seviyesinde (MEB müfredatı A1-A2) uzmanlaşmış, motive edici, nazik ve eğlenceli bir İngilizce kelime ve dil öğretmeni asistanısın.
@@ -40,10 +36,9 @@ KURALLAR:
 6. Çok uzun ve karmaşık paragraflar yazma, maddeler ve emojilerle eğlenceli hale getir.
 ${currentWord ? `Öğrencinin şu an çalıştığı kelime: ${currentWord.word} (${currentWord.meaning})` : ""}`;
 
-    // Prepare contents
+    // Prepare conversation contents
     let promptContents: string = "";
     if (messages && Array.isArray(messages) && messages.length > 0) {
-      // Build conversation string
       const conversationHistory = messages
         .map((m: { role: string; content: string }) => `${m.role === "user" ? "Öğrenci" : "Öğretmen"}: ${m.content}`)
         .join("\n");
@@ -53,7 +48,7 @@ ${currentWord ? `Öğrencinin şu an çalıştığı kelime: ${currentWord.word}
     }
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.7-flash",
+      model: "gemini-2.5-flash",
       contents: promptContents,
       config: {
         systemInstruction,
@@ -79,3 +74,4 @@ ${currentWord ? `Öğrencinin şu an çalıştığı kelime: ${currentWord.word}
     );
   }
 }
+
