@@ -1,0 +1,6 @@
+{
+  "name": "6. Sınıf İngilizce Kelime Dünyası",
+  "description": "6. sınıf MEB müfredatına uygun interaktif İngilizce kelime kartları, boşluk doldurma alıştırmaları ve 5 kelimede bir mini quiz uygulaması.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
