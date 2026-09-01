@@ -1,6 +1,8 @@
 import { GoogleGenAI } from "@google/genai";
 import { NextRequest, NextResponse } from "next/server";
 
+export const dynamic = 'force-dynamic';
+
 // Server-side route handler - process.env.GEMINI_API_KEY is never exposed to the client
 export async function POST(req: NextRequest) {
   try {
