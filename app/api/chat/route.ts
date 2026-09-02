@@ -39,12 +39,14 @@ KURALLAR:
 ${currentWord ? `Öğrencinin şu an çalıştığı kelime: ${currentWord.word} (${currentWord.meaning})` : ""}`;
 
     // Prepare conversation contents
-    let promptContents: string = "";
+    let promptContents: Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }> | string;
     if (messages && Array.isArray(messages) && messages.length > 0) {
-      const conversationHistory = messages
-        .map((m: { role: string; content: string }) => `${m.role === "user" ? "Öğrenci" : "Öğretmen"}: ${m.content}`)
-        .join("\n");
-      promptContents = `${conversationHistory}\nÖğrenci: ${message || ""}\nÖğretmen:`;
+      promptContents = messages
+        .filter((m: { content?: string }) => m && typeof m.content === 'string' && m.content.trim().length > 0)
+        .map((m: { role?: string; content: string }) => ({
+          role: m.role === 'assistant' || m.role === 'model' ? ('model' as const) : ('user' as const),
+          parts: [{ text: m.content }],
+        }));
     } else {
       promptContents = message || "Merhaba öğretmenim!";
     }
